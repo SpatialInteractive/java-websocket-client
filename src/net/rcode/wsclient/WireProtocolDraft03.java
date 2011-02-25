@@ -112,6 +112,7 @@ public class WireProtocolDraft03 extends WireProtocol {
 				} else {
 					// This is an ack of a previous close we sent.  The writer has already
 					// concluded.
+					socket.abort();
 					return null;
 				}
 			default:

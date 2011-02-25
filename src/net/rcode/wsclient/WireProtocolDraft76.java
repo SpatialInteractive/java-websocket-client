@@ -54,20 +54,24 @@ public class WireProtocolDraft76 extends WireProtocol {
 					// Close
 					if (readyState==WebSocket.OPEN) {
 						// Closing handshake has not yet started - start closing handshake
+						// This is for a close by the other end
 						Message closeMessage=new Message(0xff, new byte[0], false);
 						socket.getTransmissionQueue().addHead(closeMessage);
 						socket.setReadyState(WebSocket.CLOSING);
 						
 						// Block on reading the next byte which should just be a stream closed
 						int shouldClose=input.read();
-						if (shouldClose==-1) {
-							socket.setReadyState(WebSocket.CLOSED);
-							return null;
-						} else {
-							throw new IOException("Bad close handshake");
+						if (shouldClose==0xff) {
+							shouldClose=input.read();
+							if (shouldClose==0x00) {
+								// Orderly close complete
+								socket.setReadyState(WebSocket.CLOSED);
+								return null;
+							}
 						}
-					} else if (readyState!=WebSocket.CLOSED) {
-						// Done here
+						throw new IOException("Bad close handshake");
+					} else {
+						// Orderly shutdown
 						socket.abort();
 						return null;
 					}
@@ -97,6 +101,7 @@ public class WireProtocolDraft76 extends WireProtocol {
 		
 		if (opcode==0xff) {
 			// Write close message
+			socket.setReadyState(WebSocket.CLOSING);
 			output.write(0xff);
 			output.write(0x00);
 			output.flush();

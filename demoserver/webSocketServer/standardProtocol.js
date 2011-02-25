@@ -11,8 +11,9 @@ const
 const 
 	 STATE_CONNHEADER=0
 	,STATE_FRAMEHEADER=1
-	,STATE_FRAMEBODY=2;
-
+	,STATE_FRAMEBODY=2
+	,STATE_CLOSING=3;
+	
 function warn(msg) {
 	console.log('WEBSOCKET WARNING: ' + msg);
 }
@@ -25,7 +26,7 @@ function debug(msg) {
  *   https://github.com/LearnBoost/Socket.IO-node/blob/master/lib/socket.io/transports/websocket.js
  * @param {Object} webSocket
  */
-function StandardProtocol(webSocket) {
+function Protocol(webSocket) {
 	this.webSocket=webSocket;
 	
 	// Setup events
@@ -68,7 +69,7 @@ function StandardProtocol(webSocket) {
  * @param {Object} header2
  * @param {Object} length
  */
-StandardProtocol.makeMessageHeader=function(header1, header2, length) {
+Protocol.makeMessageHeader=function(header1, header2, length) {
 	// Act differently based on length
 	var message;
 	if (length<126) {
@@ -108,11 +109,11 @@ StandardProtocol.makeMessageHeader=function(header1, header2, length) {
 	}
 };
 
-StandardProtocol.prototype={};
-StandardProtocol.prototype.version='draft03';
+Protocol.prototype={};
+Protocol.prototype.version='draft03';
 
 // -- public Protocol api
-StandardProtocol.prototype.sendTextMessage=function(text) {
+Protocol.prototype.sendTextMessage=function(text) {
 	var msgBuffer;
 	if (Buffer.isBuffer(text)) msgBuffer=text;
 	else msgBuffer=new Buffer(text, 'utf8');
@@ -121,11 +122,11 @@ StandardProtocol.prototype.sendTextMessage=function(text) {
 		throw new Error('Attempt to send WebSocket message larger than maxMessageSize');
 		
 	this.transmitMessage([
-		StandardProtocol.makeMessageHeader(OPCODE_TEXT, 0, msgBuffer.length),
+		Protocol.makeMessageHeader(OPCODE_TEXT, 0, msgBuffer.length),
 		msgBuffer]);	
 };
 
-StandardProtocol.prototype.sendBinaryMessage=function(buffer) {
+Protocol.prototype.sendBinaryMessage=function(buffer) {
 	var msgBuffer;
 	if (Buffer.isBuffer(text)) msgBuffer=text;
 	else msgBuffer=new Buffer(text, 'utf8');
@@ -134,28 +135,25 @@ StandardProtocol.prototype.sendBinaryMessage=function(buffer) {
 		throw new Error('Attempt to send WebSocket message larger than maxMessageSize');
 		
 	this.transmitMessage([
-		StandardProtocol.makeMessageHeader(OPCODE_BINARY, 0, msgBuffer.length),
+		Protocol.makeMessageHeader(OPCODE_BINARY, 0, msgBuffer.length),
 		msgBuffer]);	
 };
 
-StandardProtocol.prototype.initiateClose=function() {
+Protocol.prototype.initiateClose=function() {
 	if (this.closing) return;
 	this.closeCookie='nodeserverclose';
 	var buffer=new Buffer(this.closeCookie, 'ascii');
 	this.closing=true;
 	this.transmitMessage([
-		StandardProtocol.makeMessageHeader(OPCODE_CLOSE, 0, buffer.length),
+		Protocol.makeMessageHeader(OPCODE_CLOSE, 0, buffer.length),
 		buffer]);
 };
 
 // -- private Protocol impl
 /**
  * RX States:
- *   0 = Reading connection header
- *   1 = Reading frame header
- *   2 = Reading frame
  */
-StandardProtocol.prototype.setState=function(state, varlen) {
+Protocol.prototype.setState=function(state, varlen) {
 	var rxbuffer;
 	switch(state) {
 	case STATE_CONNHEADER:
@@ -182,13 +180,18 @@ StandardProtocol.prototype.setState=function(state, varlen) {
 		rxbuffer.received=0;
 		rxbuffer.needed=varlen;
 		break;
+	case STATE_CLOSING:
+		rxbuffer=this.scratchBuffer;
+		rxbuffer.needed=0;
+		rxbuffer.received=0;
+		break;
 	}
 	
 	this.rxbuffer=rxbuffer;
 	this.rxstate=state;
 	debug('setState ' + state + ', rxbuffer.needed=' + rxbuffer.needed);
 };
-StandardProtocol.prototype.validateHandshake=function(key3) {
+Protocol.prototype.validateHandshake=function(key3) {
 	var cn=this.webSocket.connection;
 	var key1=this.key1, key2=this.key2;
 	var md5=crypto.createHash('md5');
@@ -215,7 +218,7 @@ StandardProtocol.prototype.validateHandshake=function(key3) {
 	}
 };
 
-StandardProtocol.prototype.writeResponseHead=function() {
+Protocol.prototype.writeResponseHead=function() {
 	var cn=this.webSocket.connection;
 	var headers=[
 		'HTTP/1.1 101 WebSocket',
@@ -236,7 +239,7 @@ StandardProtocol.prototype.writeResponseHead=function() {
 	cn.write(headers.join('\r\n'));
 };
 
-StandardProtocol.prototype.serviceTxqueue=function() {
+Protocol.prototype.serviceTxqueue=function() {
 	var cn=this.webSocket.connection;
 	var txqueue=this.txqueue;
 	var item;
@@ -247,14 +250,16 @@ StandardProtocol.prototype.serviceTxqueue=function() {
 		item=txqueue.shift();
 		for (i=0; i<item.length; i++) {
 			buffer=item[i];
-			cn.write(buffer);
-			this.txdraining+=buffer.length;
+			if (!cn.write(buffer)) {
+				this.txdraining+=buffer.length;
+			}
 		}
 		debug('Transmitted frame');
 		
 		// Special case.  If we just sent a close message, stop transmission
 		if (item[0] && item[0][0]===OPCODE_CLOSE) {
 			this.txenabled=false;
+			this.closeOnTimeout();
 			debug('CLOSE message sent.  Transmission disabled');
 		}
 	}
@@ -264,7 +269,7 @@ StandardProtocol.prototype.serviceTxqueue=function() {
  * Adds a message buffer to the transmission queue.
  * @param {Object} buffer
  */
-StandardProtocol.prototype.transmitMessage=function(bufferAry) {
+Protocol.prototype.transmitMessage=function(bufferAry) {
 	this.txqueue.push(bufferAry);
 	if (this.txqueue.length===1) this.serviceTxqueue();
 };
@@ -273,12 +278,12 @@ StandardProtocol.prototype.transmitMessage=function(bufferAry) {
  * Adds a message to the front of the transmission queue
  * @param {Object} buffer
  */
-StandardProtocol.prototype.transmitMessageImmediate=function(bufferAry) {
+Protocol.prototype.transmitMessageImmediate=function(bufferAry) {
 	this.txqueue.unshift(bufferAry);
 	if (this.txqueue.length===1) this.serviceTxqueue();
 }
 
-StandardProtocol.prototype.ondata=function(data) {
+Protocol.prototype.ondata=function(data) {
 	while (data&&data.length) {
 		var rxbuffer=this.rxbuffer;
 		if (!rxbuffer) break;
@@ -332,7 +337,7 @@ StandardProtocol.prototype.ondata=function(data) {
 		}
 	}
 };
-StandardProtocol.prototype.onstateConnHeader=function(rxbuffer) {
+Protocol.prototype.onstateConnHeader=function(rxbuffer) {
 	// Key3 is just 8 bytes of the buffer
 	var key3=rxbuffer.slice(0,8);
 	
@@ -352,7 +357,7 @@ StandardProtocol.prototype.onstateConnHeader=function(rxbuffer) {
 	return true;
 };
 
-StandardProtocol.prototype.onstateFrameHeader=function(headerBuffer) {
+Protocol.prototype.onstateFrameHeader=function(headerBuffer) {
 	var frameHeader;
 	if (headerBuffer.needed===2) {
 		// Decode initial header fields.  We may need more depending on
@@ -414,7 +419,7 @@ StandardProtocol.prototype.onstateFrameHeader=function(headerBuffer) {
 	return false;
 };
 
-StandardProtocol.prototype.onstateFrameBody=function(frameBuffer) {
+Protocol.prototype.onstateFrameBody=function(frameBuffer) {
 	// At this point, this.frameHeader is valid and frameBuffer is totally
 	// filled
 	var frameHeader=this.frameHeader;
@@ -430,7 +435,7 @@ StandardProtocol.prototype.onstateFrameBody=function(frameBuffer) {
 	case OPCODE_PING:
 		webSocket.emit('ping', frameBuffer, frameHeader);
 		this.transmitMessageImmediate([
-			StandardProtocol.makeMessageHeader(OPCODE_PONG, 0, frameBuffer.length),
+			Protocol.makeMessageHeader(OPCODE_PONG, 0, frameBuffer.length),
 			frameBuffer]);
 		break;
 	case OPCODE_PONG:
@@ -443,9 +448,11 @@ StandardProtocol.prototype.onstateFrameBody=function(frameBuffer) {
 		} else {
 			// Received close request.  Respond with ACK.  Fully closed.
 			this.transmitMessageImmediate([
-				StandardProtocol.makeMessageHeader(OPCODE_CLOSE, 0, frameBuffer.length),
+				Protocol.makeMessageHeader(OPCODE_CLOSE, 0, frameBuffer.length),
 				frameBuffer]);
-			return false;
+			this.closeOnTimeout();
+			this.setState(STATE_CLOSING);
+			return true;
 		}
 		break;
 	default:
@@ -461,28 +468,34 @@ StandardProtocol.prototype.onstateFrameBody=function(frameBuffer) {
 	return true;
 };
 
-StandardProtocol.prototype.onend=function() {
+Protocol.prototype.closeOnTimeout=function(timeout) {
+	if (this.closingOnTimeout) return;
+	this.closingOnTimeout=true;
+	
+	if (!timeout) timeout=20000;
+	var self=this;
+	// Set a close timer to make sure we clean up
+	var cn=this.webSocket.connection;
+	cn.on('timeout', function() {
+		warn('Timeout waiting for WebSocket close handshake.  Force closing connection.');
+		self.webSocket.abort();
+	});
+	cn.setTimeout(timeout);
+};
+
+
+Protocol.prototype.onend=function() {
 	debug('socket end');
 	// Half closed connections don't imply close on end
 	this.webSocket.abort();
 };
-StandardProtocol.prototype.onclose=function() {
+Protocol.prototype.onclose=function() {
 	debug('socket close');
 };
-StandardProtocol.prototype.ondrain=function() {
+Protocol.prototype.ondrain=function() {
 	var self=this;
 	this.txdraining=0;
 	this.serviceTxqueue();
-	
-	if (this.closing && !this.txenabled) {
-		// Set a close timer to make sure we clean up
-		var cn=this.webSocket.connection;
-		cn.on('timeout', function() {
-			warn('Timeout waiting for WebSocket close handshake.  Force closing connection.');
-			self.webSocket.abort();
-		});
-		cn.setTimeout(20000);
-	}
 };
 
-module.exports=StandardProtocol;
+module.exports=Protocol;

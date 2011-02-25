@@ -62,6 +62,8 @@ public class TestEchoServerDraft76 {
 		ws.close();
 		
 		ws.waitForReadyState(WebSocket.CLOSED);
+		System.out.println("Closed.  ReadyState=" + ws.getReadyState());
+		
 		Thread.sleep(1000);
 	}
 }

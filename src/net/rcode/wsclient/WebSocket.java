@@ -319,7 +319,7 @@ public class WebSocket {
 	
 	public void waitForReadyState(int targetReadyState) throws InterruptedException {
 		synchronized (this) {
-			while (readyState==targetReadyState) {
+			while (readyState!=targetReadyState) {
 				this.wait();
 			}
 		}

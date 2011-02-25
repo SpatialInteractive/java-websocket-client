@@ -1,6 +1,7 @@
 var http=require('http');
 var EventEmitter=require('events').EventEmitter;
 var standardProtocol=require('./standardProtocol');
+var draft76Protocol=require('./draft76Protocol');
 
 function WebSocket(req, connection, startBuffer) {
 	this.req=req;
@@ -40,7 +41,7 @@ WebSocket.prototype.connect=function() {
 	if (draftVersion=='2' || draftVersion=='3') {
 		protocol=new standardProtocol(this);
 	} else {
-		// TODO: Fallback to draft 76
+		protocol=new draft76Protocol(this);
 	}
 	
 	if (!protocol) {
