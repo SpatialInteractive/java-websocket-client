@@ -4,17 +4,17 @@ import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.util.Arrays;
 
-public class FramingDraft03 extends Framing {
+public class WireProtocolDraft03 extends WireProtocol {
 	@Override
-	public Message readMessage(DataInputStream input) throws Exception {
+	public Message readMessage(WebSocket socket, DataInputStream input) throws Exception {
 		// TODO Auto-generated method stub
-		return super.readMessage(input);
+		return super.readMessage(socket, input);
 	}
 	
 	@Override
-	public void sendMessage(DataOutputStream out, Message message) throws Exception {
+	public boolean sendMessage(WebSocket socket, DataOutputStream out, Message message) throws Exception {
 		byte[] data=message.getMessageData();
-		if (data==null) return;
+		if (data==null) return true;
 		
 		int length=data.length;
 		int header1=message.getOpcode()&0xf;
@@ -46,6 +46,8 @@ public class FramingDraft03 extends Framing {
 		out.write(data);
 		out.flush();
 		System.out.println("Message sent");
+		
+		return true;
 	}
 
 }

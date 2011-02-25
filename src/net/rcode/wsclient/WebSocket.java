@@ -2,26 +2,17 @@ package net.rcode.wsclient;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
-import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.net.Socket;
 import java.net.URI;
-import java.nio.ByteBuffer;
-import java.nio.CharBuffer;
-import java.nio.charset.Charset;
-import java.nio.charset.CharsetDecoder;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashMap;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
-import java.util.Random;
 import java.util.regex.Pattern;
 
 import javax.net.SocketFactory;
@@ -42,11 +33,8 @@ import javax.net.SocketFactory;
  *
  */
 public class WebSocket {
-	private static final Pattern VERIFY_STATUSLINE_PATTERN=Pattern.compile("^HTTP\\/[^ ]+ 101");
 	private static final Pattern INVALID_HEADER_NAME_PATTERN=Pattern.compile("[\\r\\n\\:]");
 	private static final Pattern INVALID_HEADER_VALUE_PATTERN=Pattern.compile("[\\r\\n]");
-	private static final Charset UTF8=Charset.forName("UTF-8");
-	private static final Random random=new Random();
 
 	public static class Event {
 		/**
@@ -95,10 +83,22 @@ public class WebSocket {
 		}
 		
 		public String toString() {
-			StringBuilder ret=new StringBuilder();
-			ret.append("<Event ").append(type).append(", readyState=").append(readyState).append(">\n");
+			StringWriter ret=new StringWriter();
+			String typeName;
+			if (type==EVENT_READYSTATE) typeName="ReadyState";
+			else if (type==EVENT_MESSAGE) typeName="Message";
+			else if (type==EVENT_ERROR) typeName="Error";
+			else typeName=String.valueOf(type);
+			
+			ret.write("<Event ");
+			ret.append(typeName);
+			ret.append(", readyState=");
+			ret.append(String.valueOf(readyState));
+			ret.append(">\n");
 			if (type==EVENT_ERROR && error!=null) {
-				ret.append(error.getMessage());
+				PrintWriter pout=new PrintWriter(ret);
+				error.printStackTrace(pout);
+				pout.flush();
 			} else if (type==EVENT_MESSAGE) {
 				ret.append(message.toString());
 			}
@@ -136,27 +136,31 @@ public class WebSocket {
 	
 	// -- public properties (read-only)
 	private int readyState;
-	private String protocol;
 	private String url;
-	private Map<String, String> requestHeaders;
+	private Map<String, String> requestHeaders=new HashMap<String, String>();
 	private Map<String, String> responseHeaders;
 	private boolean verifyHandshake=true;
 	
 	// -- public properties (read-write)
 	private NetConfig netConfig=new NetConfig();
-	private Framing framing=new FramingDraft76();
+	private WireProtocol wireProtocol=WireProtocolDraft76.INSTANCE;
 	
 	public synchronized int getReadyState() {
 		return readyState;
 	}
 	protected synchronized void setReadyState(int readyState) {
-		boolean hasListeners;
+		boolean notifyListeners;
 		synchronized(this) {
-			this.readyState = readyState;
-			hasListeners=listeners!=null;
+			if (readyState!=this.readyState) {
+				this.readyState = readyState;
+				notifyListeners=listeners!=null;
+				this.notifyAll();
+			} else {
+				notifyListeners=false;
+			}
 		}
 		
-		if (hasListeners) {
+		if (notifyListeners) {
 			Event event=new Event();
 			event.source=this;
 			event.type=EVENT_READYSTATE;
@@ -166,10 +170,18 @@ public class WebSocket {
 	}
 	
 	public synchronized String getProtocol() {
-		return protocol;
+		if (responseHeaders==null) return null;
+		return responseHeaders.get("sec-websocket-protocol");
 	}
-	protected synchronized void setProtocol(String protocol) {
-		this.protocol = protocol;
+	
+	public synchronized String[] getResponseHeaderNames() {
+		if (responseHeaders==null) return null;
+		return responseHeaders.keySet().toArray(new String[responseHeaders.size()]);
+	}
+	
+	public synchronized String getResponseHeader(String name) {
+		if (responseHeaders==null) return null;
+		return responseHeaders.get(name.toLowerCase());
 	}
 	
 	public String getUrl() {
@@ -182,6 +194,15 @@ public class WebSocket {
 	public void setNetConfig(NetConfig netConfig) {
 		if (started) throw new IllegalStateException();
 		this.netConfig = netConfig;
+	}
+	
+	public WireProtocol getWireProtocol() {
+		return wireProtocol;
+	}
+	
+	public void setWireProtocol(WireProtocol wireProtocol) {
+		if (started) throw new IllegalStateException();
+		this.wireProtocol = wireProtocol;
 	}
 	
 	/**
@@ -213,21 +234,98 @@ public class WebSocket {
 	}
 	
 	// -- public api
+	/**
+	 * Queues a message for sending (puts the message at the tail of the queue)
+	 */
 	public void send(Message message) {
-		synchronized (queue) {
-			boolean wasEmpty=queue.isEmpty();
-			queue.addLast(message);
-			if (wasEmpty) queue.notify();
-		}
+		transmissionQueue.addTail(message);
+	}
+	
+	/**
+	 * Queues a message for immediate transmission (puts it at the head of the
+	 * queue).
+	 * @param message
+	 */
+	public void sendImmediate(Message message) {
+		transmissionQueue.addHead(message);
 	}
 	
 	public void send(String message) {
-		send(new Message(Message.OPCODE_TEXT, message.getBytes(UTF8)));
+		send(new Message(message));
 	}
 	
-	public void close() throws IOException {
-		socket.close();
+	/**
+	 * @return the number of messages on the transmission queue
+	 */
+	public int getOutgoingDepth() {
+		return transmissionQueue.getDepth();
 	}
+	
+	/**
+	 * @return the approximate number of bytes queued for transmission (excluding framing)
+	 */
+	public long getOutgoingAmount() {
+		return transmissionQueue.getBytes();
+	}
+	
+	public void close() {
+		synchronized (this) {
+			if (readyState!=OPEN) {
+				abort();
+				return;
+			}
+		}
+		wireProtocol.initiateClose(this);
+	}
+	
+	/**
+	 * Immediately abort the connection.
+	 */
+	public void abort() {
+		if (socket!=null) {
+			try {
+				socket.close();
+				// This will stop anything blocked on read or write
+			} catch (IOException e) {
+				// Not much else to do
+				e.printStackTrace();
+			}
+			socket=null;
+		}
+		
+		synchronized (this) {
+			shutdownInitiated=true;
+			if (readerThread!=null && readerThread.isAlive()) {
+				readerThread.interrupt();
+				try {
+					readerThread.join();
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+				}
+			}
+			if (writerThread!=null && writerThread.isAlive()) {
+				writerThread.interrupt();
+				try {
+					writerThread.join();
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+				}
+			}
+			readerThread=null;
+			writerThread=null;
+		}
+		
+		setReadyState(CLOSED);
+	}
+	
+	public void waitForReadyState(int targetReadyState) throws InterruptedException {
+		synchronized (this) {
+			while (readyState==targetReadyState) {
+				this.wait();
+			}
+		}
+	}
+
 	
 	public synchronized void addListener(EventListener l) {
 		if (dispatchingEvent && listeners!=null) {
@@ -278,6 +376,21 @@ public class WebSocket {
 		writerThread.start();
 	}
 	
+	// -- package private (to protocol implementations)
+	protected Map<String, String> getRequestHeaders() {
+		return requestHeaders;
+	}
+	protected String[] getRequestedProtocols() {
+		return requestedProtocols;
+	}
+	protected synchronized void setResponseHeaders(Map<String, String> responseHeaders) {
+		this.responseHeaders = responseHeaders;
+	}
+	protected MessageQueue getTransmissionQueue() {
+		return transmissionQueue;
+	}
+	
+	
 	// -- internal implementation
 	private boolean started;
 	private Thread readerThread, writerThread;
@@ -307,10 +420,11 @@ public class WebSocket {
 	}
 	
 	protected void signalError(Throwable t) {
-		t.printStackTrace();
+		//t.printStackTrace();
 		Event event=new Event();
 		event.source=this;
 		event.type=EVENT_ERROR;
+		event.readyState=readyState;
 		event.error=t;
 		signalEvent(event);
 	}
@@ -339,23 +453,17 @@ public class WebSocket {
 	private URI uri;
 	private String hostName;
 	private int port;
-	private String hostHeader;
-	private String path;
 	private SocketFactory socketFactory;
 	private Socket socket;
 	private DataInputStream in;
 	private DataOutputStream out;
-	
-	/**
-	 * Message queue.  Put on end, read from front.  Synchronize on the queue
-	 * and notify when transition to !empty.
-	 */
-	private LinkedList<Message> queue=new LinkedList<Message>();
+	private MessageQueue transmissionQueue=new MessageQueue();
 	
 	private void setupConnection() throws Throwable {
 		uri=new URI(url);
 		
 		// Detect protocol, host, port
+		String hostHeader;
 		String scheme=uri.getScheme();
 		port=uri.getPort();
 		hostName=uri.getHost();
@@ -375,12 +483,8 @@ public class WebSocket {
 			throw new IllegalArgumentException("Unsupported websocket protocol");
 		}
 		
-		// Figure the path
-		path=uri.getRawPath();
-		if (path.length()==0) path="/";	// Deal with malformed root
-		if (uri.getRawQuery()!=null) {
-			path+='?' + uri.getRawQuery();
-		}
+		// Add the host header
+		requestHeaders.put("Host", hostHeader);
 		
 		// Connect the socket
 		socket=socketFactory.createSocket(hostName, port);
@@ -394,82 +498,13 @@ public class WebSocket {
 		}
 	}
 	
-	private void performHandshake() throws Throwable {
-		String key1=generateKey();
-		String key2=generateKey();
-		byte[] quad=new byte[8];
-		random.nextBytes(quad);
-		
-		Map<String,String> headerMap=requestHeaders;
-		if (headerMap==null) headerMap=new HashMap<String, String>();
-		headerMap.put("Connection", "Upgrade");
-		headerMap.put("Upgrade", "WebSocket");
-		headerMap.put("Host", hostHeader);
-		headerMap.put("Sec-WebSocket-Key1", key1);
-		headerMap.put("Sec-WebSocket-Key2", key2);
-		if (requestedProtocols!=null && requestedProtocols.length>0) {
-			StringBuilder joinedProtocol=new StringBuilder();
-			for (String protocol: requestedProtocols) {
-				if (joinedProtocol.length()>0) joinedProtocol.append(' ');
-				joinedProtocol.append(protocol);
-			}
-			headerMap.put("Sec-WebSocket-Protocol", joinedProtocol.toString());
-		}
-		
-		// Build the request
-		StringBuilder request=new StringBuilder(1500);
-		request.append("GET ").append(path).append(" HTTP/1.1\r\n");
-		for (Map.Entry<String, String> entry: headerMap.entrySet()) {
-			request.append(entry.getKey());
-			request.append(": ");
-			request.append(entry.getValue());
-			request.append("\r\n");
-		}
-		request.append("\r\n");
-		
-		System.out.println("Sending request \n'" + request + "'");
-		out.write(request.toString().getBytes(UTF8));
-		out.flush();	// Give proxys a better chance of dealing with what follows
-		out.write(quad);
-		out.flush();
-		
-		// Read the HTTP status line
-		String statusLine=readLine(in);
-		if (!VERIFY_STATUSLINE_PATTERN.matcher(statusLine).find())
-			throw new IOException("Bad status line from server: " + statusLine);
-		
-		// Read each header line until we get an empty
-		responseHeaders=new HashMap<String, String>();
-		for (;;) {
-			String headerLine=readLine(in);
-			if (headerLine.length()==0) break;	// End of headers
-			int colonPos=headerLine.indexOf(": ");
-			if (colonPos<0) {
-				throw new IOException("Illegal HTTP header in response");
-			}
-			
-			String name=headerLine.substring(0, colonPos), value=headerLine.substring(colonPos+2);
-			responseHeaders.put(name.toLowerCase(), value);
-		}
-		
-		protocol=responseHeaders.get("sec-websocket-protocol");
-		
-		// Now read the handshake from the input and verify
-		byte[] serverHandshake=new byte[16];
-		in.readFully(serverHandshake);
-		validateHandshake(key1, key2, quad, serverHandshake);
-		
-		// And finally ready to go
-		setReadyState(OPEN);
-	}
 
 	private void pumpSocketInput() throws Exception {
 		for (;;) {
-			Message message=framing.readMessage(in);
+			Message message=wireProtocol.readMessage(this, in);
 			if (message==null) break;
 			signalMessage(message);
 		}
-		System.out.println("Socket closed");
 	}
 	
 	private void runReader() {
@@ -478,7 +513,7 @@ public class WebSocket {
 		// Before starting the main loop, we need to resolve the URI
 		try {
 			setupConnection();
-			performHandshake();
+			wireProtocol.performHandshake(this, uri, in, out);
 			startWriter();
 			pumpSocketInput();
 		} catch (Throwable t) {
@@ -490,31 +525,20 @@ public class WebSocket {
 	private void runWriter() {
 		System.out.println("Writer starting");
 		for (;;) {
-			synchronized (this) {
-				if (shutdownInitiated) break;
-			}
-			
 			Message next;
-			synchronized (queue) {
-				if (queue.isEmpty()) {
-					try {
-						queue.wait();
-						continue;
-					} catch (InterruptedException e) {
-						break;
-					}
-				}
-				
-				next=queue.removeFirst();
+			try {
+				next=transmissionQueue.waitNext();
+			} catch (InterruptedException e) {
+				// Shutdown
+				break;
 			}
 			
 			try {
-				transmitMessage(next);
+				boolean shouldContinue=wireProtocol.sendMessage(this, out, next);
+				transmissionQueue.remove(next);
+				if (!shouldContinue) break;
 			} catch (Throwable t) {
 				// Replace the message
-				synchronized (queue) {
-					queue.addFirst(next);
-				}
 				exceptionalShutdown(t);
 				break;
 			}
@@ -523,207 +547,10 @@ public class WebSocket {
 	}
 	
 	/**
-	 * Physically transmits a message
-	 * @param message
-	 * @throws IOException 
-	 */
-	private void transmitMessage(Message message) throws Exception {
-		framing.sendMessage(out, message);
-	}
-	
-	/**
 	 * Called on exception.  Fires events and shuts everything down.
 	 */
 	private void exceptionalShutdown(Throwable t) {
 		signalError(t);
-		if (socket!=null) {
-			try {
-				socket.close();
-				// This will stop anything blocked on read or write
-			} catch (IOException e) {
-				// Not much else to do
-				e.printStackTrace();
-			}
-			socket=null;
-		}
-		
-		synchronized (this) {
-			shutdownInitiated=true;
-			if (readerThread!=null && readerThread.isAlive()) readerThread.interrupt();
-			if (writerThread!=null && writerThread.isAlive()) writerThread.interrupt();
-			readerThread=null;
-			writerThread=null;
-		}
+		abort();
 	}
-	
-	/**
-	 * Reads a line of bytes terminated by CR-LF and returns it without the line ending
-	 * decoded as UTF-8.  It will actually accept just a naked LF and ignore the preceeding CR
-	 * if present.
-	 * <p>
-	 * This method presumes that the stream supports mark/reset semantics.
-	 * 
-	 * @param in
-	 * @return String
-	 * @throws IOException 
-	 */
-	private String readLine(InputStream in) throws IOException {
-		StringBuilder ret=new StringBuilder(256);
-		
-		boolean verifyLf=false;
-		CharsetDecoder decoder=UTF8.newDecoder();
-		byte[] source=new byte[256];
-		char[] dest=new char[256];
-		ByteBuffer sourceBuffer=ByteBuffer.wrap(source);
-		CharBuffer destBuffer=CharBuffer.wrap(dest);
-		for (;;) {
-			in.mark(source.length);
-			int r=in.read(source);
-			if (r<0) {
-				throw new IOException("Short line reading response");
-			}
-			sourceBuffer.clear();
-			sourceBuffer.limit(r);
-			
-			// Scan for a line ending
-			int lineEndIndex;
-			for (lineEndIndex=0; lineEndIndex<r; lineEndIndex++) {
-				byte b=source[lineEndIndex];
-				if (b=='\n') {
-					// Naked newline terminated (no CR)
-					break;
-				} else if (b=='\r') {
-					// Treat this as an end of line but set a flag saying we should read the next
-					// byte and verify LF
-					verifyLf=true;
-					break;
-				}
-			}
-			
-			if (lineEndIndex==r) {
-				// We rolled off the buffer without finding a line ending
-				// Consume all of it
-				sourceBuffer.flip();
-				destBuffer.clear();
-				if (decoder.decode(sourceBuffer, destBuffer, false).isError()) {
-					throw new IOException("Error decoding");
-				}
-				ret.append(dest, 0, destBuffer.position());
-				continue;
-			} else {
-				// The line ending was in the buffer
-				sourceBuffer.position(lineEndIndex);
-				sourceBuffer.flip();
-				destBuffer.clear();
-				if (decoder.decode(sourceBuffer, destBuffer, true).isError()) {
-					throw new IOException("Error decoding");
-				}
-				ret.append(dest, 0, destBuffer.position());
-				
-				// Reset the input stream and then fast forward
-				in.reset();
-				in.skip(lineEndIndex+1);
-				break;
-			}
-		}
-		
-		// Check for dangling LF
-		if (verifyLf) {
-			int lf=in.read();
-			if (lf!='\n') {
-				throw new IOException("Malformed line.  Unmatched CR.");
-			}
-		}
-		
-		return ret.toString();
-	}
-	
-	/**
-	 * Generate a sequence of random chars
-	 * @param charCount Number of misc ascii chars
-	 * @param numCount Number of numeric chars
-	 * @param spaceCount Number of spaces
-	 * @param armor true to armor the result (add a printable ascii char to front and back)
-	 * @return the result
-	 */
-	private static String generateKey() {
-		int divisor=random.nextInt(8)+1;
-		int number=(random.nextInt(1000000)+1000) * divisor;	// Make sure it evenly divides
-		
-		String numberStr=String.valueOf(number);
-		
-		StringBuilder ret=new StringBuilder(32);
-		ret.append(numberStr);
-		for (int i=0; i<divisor; i++) {
-			// Insert one space per divisor
-			int index=random.nextInt(ret.length());
-			ret.insert(index, ' ');
-		}
-		
-		for (int i=0; i<numberStr.length()/2; i++) {
-			// Strew some random characters around
-			int index=random.nextInt(ret.length());
-			ret.insert(index, (char)(random.nextInt(122-65)+65));
-		}
-		
-		// Finally, add a regular ascii printable at front and back
-		ret.insert(0, (char)(random.nextInt(122-65)+65));
-		ret.append((char)(random.nextInt(122-65)+65));
-
-		return ret.toString();
-	}
-
-	/**
-	 * Validate the handshake per the spec.  Really you can't make this stuff up.  Implementation
-	 * of the most obscure security measures to guard access to a public park follows.
-	 * 
-	 * @param key1
-	 * @param key2
-	 * @param randomBody
-	 * @param serverHandshake
-	 * @throws IOException 
-	 * @throws NoSuchAlgorithmException 
-	 */
-	private void validateHandshake(String key1, String key2, byte[] clientQuad,
-			byte[] serverHandshake) throws IOException, NoSuchAlgorithmException {
-		if (!verifyHandshake) return;
-		
-		StringBuilder key1Numbers=new StringBuilder(key1.length());
-		StringBuilder key2Numbers=new StringBuilder(key2.length());
-		int key1Spaces=0, key2Spaces=0;
-		
-		// Scan key1 for numbers and spaces
-		for (int i=0; i<key1.length(); i++) {
-			char c=key1.charAt(i);
-			if (c==' ') key1Spaces++;
-			else if (c>='0' && c<='9') key1Numbers.append(c);
-		}
-		
-		// Scan key2 for numbers and spaces
-		for (int i=0; i<key2.length(); i++) {
-			char c=key2.charAt(i);
-			if (c==' ') key2Spaces++;
-			else if (c>='0' && c<='9') key2Numbers.append(c);
-		}
-		
-		int key1Int=Integer.parseInt(key1Numbers.toString()) / key1Spaces;
-		int key2Int=Integer.parseInt(key2Numbers.toString()) / key2Spaces;
-		
-		ByteArrayOutputStream bufferOut=new ByteArrayOutputStream(16);
-		DataOutputStream bufferData=new DataOutputStream(bufferOut);
-		bufferData.writeInt(key1Int);
-		bufferData.writeInt(key2Int);
-		bufferData.write(clientQuad);
-		
-		byte[] buffer=bufferOut.toByteArray();
-		MessageDigest digest=MessageDigest.getInstance("MD5");
-		byte[] clientHandshake=digest.digest(buffer);
-		
-		if (!Arrays.equals(clientHandshake, serverHandshake)) {
-			throw new IOException("Client and server handshake don't match:\nraw=" + Arrays.toString(buffer) + "\nclient=" + Arrays.toString(clientHandshake) + "\nserver=" + Arrays.toString(serverHandshake));
-		} else {
-			System.out.println("Handshakes match");
-		}
-	}
-
 }
