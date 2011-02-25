@@ -16,7 +16,7 @@ public class TestEchoServerDraft76 {
 		
 		//WebSocket ws=new WebSocket("ws://echo.websocket.org");
 		//ws.addRequestHeader("Origin", "http://websocket.org");
-		WebSocket ws=new WebSocket("ws://localhost:4080/sometest/socket");
+		WebSocket ws=new WebSocket("ws://localhost:4080/echoserver");
 		ws.addRequestHeader("Origin", "http://localhost:4080");
 		ws.setWireProtocol(WireProtocolDraft03.INSTANCE);
 		

@@ -7,6 +7,24 @@ function WebSocket(req, connection, startBuffer) {
 	this.req=req;
 	this.connection=connection;
 	this.startBuffer=startBuffer;
+	this.responseHeaders={};
+	
+	// Apply defaults for required headers
+	// User can customize
+	var reqOrigin=req.headers['origin'];
+	if (reqOrigin) {
+		this.responseHeaders['sec-websocket-origin']=reqOrigin;
+	}
+	
+	// Calculate location
+	var location=[];
+	if (false) location.push('wss://');	// TODO: Figure how to detect https from req
+	else location.push('ws://');
+	location.push(req.headers['host']);
+	location.push(req.originalUrl || req.url);
+	this.responseHeaders['sec-websocket-location']=location.join('');
+	
+	//console.log(require('util').inspect(req));
 }
 WebSocket.prototype=Object.create(EventEmitter.prototype);
 

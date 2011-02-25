@@ -164,7 +164,7 @@ Protocol.prototype.writeResponseHead=function() {
 		'Connection: Upgrade'
 	];
 	
-	var addlHeaders=this.webSocket.responseHeaders;
+	var addlHeaders=this.webSocket.responseHeaders||{};
 	if (addlHeaders) {
 		Object.keys(addlHeaders).forEach(function(k) {
 			headers.push(k + ': ' + String(addlHeaders[k]));
