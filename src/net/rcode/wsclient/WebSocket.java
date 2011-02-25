@@ -294,7 +294,6 @@ public class WebSocket {
 		}
 		
 		synchronized (this) {
-			shutdownInitiated=true;
 			if (readerThread!=null && readerThread.isAlive()) {
 				readerThread.interrupt();
 				try {
@@ -402,7 +401,6 @@ public class WebSocket {
 	private boolean started;
 	private Thread readerThread, writerThread;
 	private String[] requestedProtocols;
-	private boolean shutdownInitiated;
 	private List<EventListener> listeners;
 	private boolean dispatchingEvent;
 	
@@ -530,7 +528,7 @@ public class WebSocket {
 	}
 	
 	private void runWriter() {
-		System.out.println("Writer starting");
+		//System.out.println("Writer starting");
 		for (;;) {
 			Message next;
 			try {
@@ -550,7 +548,7 @@ public class WebSocket {
 				break;
 			}
 		}
-		System.out.println("Writer exiting");
+		//System.out.println("Writer exiting");
 	}
 	
 	/**

@@ -33,8 +33,7 @@ public class WireProtocolDraft03 extends WireProtocol {
 	@Override
 	public void initiateClose(WebSocket socket) {
 		synchronized (socket) {
-			byte[] cookie=new byte[8];
-			random.nextBytes(cookie);
+			byte[] cookie="clientclose".getBytes(UTF8);
 			
 			if (socket.getReadyState()==WebSocket.OPEN) {
 				socket.setReadyState(WebSocket.CLOSING);
@@ -99,6 +98,7 @@ public class WireProtocolDraft03 extends WireProtocol {
 				continue;
 			case Message.OPCODE_CLOSE:
 				byte[] closeCookie=socket.getCloseCookie();
+				//System.out.println("Close message.  Cookie=" + new String(closeCookie) + ", contents=" + new String(contents));
 				if (closeCookie==null || !Arrays.equals(contents, closeCookie)) {
 					// This is not an ACK of our close
 					// Need to send a close ACK
@@ -107,7 +107,7 @@ public class WireProtocolDraft03 extends WireProtocol {
 					
 					// The writer will close the queue when it is done.  Just wait for it.
 					int expectClose=input.read();
-					if (expectClose!=-1) throw new IOException("Protocol error");
+					if (expectClose!=-1) throw new IOException("Protocol error.  Expected EOF.  Got " + expectClose);
 					return null;
 				} else {
 					// This is an ack of a previous close we sent.  The writer has already

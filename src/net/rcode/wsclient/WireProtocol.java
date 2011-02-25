@@ -81,7 +81,7 @@ public class WireProtocol {
 		}
 		request.append("\r\n");
 		
-		System.out.println("Sending request \n'" + request + "'");
+		//System.out.println("Sending request \n'" + request + "'");
 		out.write(request.toString().getBytes(UTF8));
 		//out.flush();	// Give proxys a better chance of dealing with what follows
 		out.write(quad);
@@ -166,7 +166,7 @@ public class WireProtocol {
 		if (!Arrays.equals(clientHandshake, serverHandshake)) {
 			throw new IOException("Client and server handshake don't match:\nraw=" + Arrays.toString(buffer) + "\nclient=" + Arrays.toString(clientHandshake) + "\nserver=" + Arrays.toString(serverHandshake));
 		} else {
-			System.out.println("Handshakes match");
+			//System.out.println("Handshakes match");
 		}
 	}
 	
@@ -284,7 +284,7 @@ public class WireProtocol {
 			}
 		}
 		
-		System.out.println("READLINE: " + ret);
+		//System.out.println("READLINE: " + ret);
 		return ret.toString();
 	}
 

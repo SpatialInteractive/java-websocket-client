@@ -3,7 +3,12 @@ var webSocketServer=require('./webSocketServer');
 
 function handleSocket(s) {
 	console.log('Handling web socket');
-	s.start();
+	s.on('message', function(body) {
+		console.log('Got message: "' + body.toString('utf8') + '"');
+		s.sendTextMessage(body);
+	});
+	
+	s.connect();
 }
 
 var server=http.createServer(function(req, res) {
