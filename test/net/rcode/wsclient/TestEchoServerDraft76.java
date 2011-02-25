@@ -14,8 +14,12 @@ public class TestEchoServerDraft76 {
 	public void testForSmoke() throws Exception {
 		final List<String> messages=new ArrayList<String>();
 		
-		WebSocket ws=new WebSocket("ws://echo.websocket.org");
-		ws.addRequestHeader("Origin", "http://websocket.org");
+		//WebSocket ws=new WebSocket("ws://echo.websocket.org");
+		//ws.addRequestHeader("Origin", "http://websocket.org");
+		WebSocket ws=new WebSocket("ws://localhost:4080/sometest/socket");
+		ws.addRequestHeader("Origin", "http://localhost:4080");
+		ws.setWireProtocol(WireProtocolDraft03.INSTANCE);
+		
 		ws.addListener(new WebSocket.EventListener() {
 			@Override
 			public void handleEvent(Event event) {
@@ -29,6 +33,10 @@ public class TestEchoServerDraft76 {
 					}
 				} else {
 					System.out.println("EVENT: " + event);
+				}
+				
+				if (event.getType()==WebSocket.EVENT_ERROR) {
+					System.exit(1);
 				}
 			}
 		});

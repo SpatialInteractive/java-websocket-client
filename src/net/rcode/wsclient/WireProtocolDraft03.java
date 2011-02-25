@@ -4,6 +4,7 @@ import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.EOFException;
 import java.io.IOException;
+import java.net.URI;
 import java.util.Arrays;
 
 /**
@@ -17,6 +18,18 @@ import java.util.Arrays;
  *
  */
 public class WireProtocolDraft03 extends WireProtocol {
+	public static final WireProtocolDraft03 INSTANCE=new WireProtocolDraft03();
+	
+	private WireProtocolDraft03() {
+	}
+	
+	@Override
+	public void performHandshake(WebSocket socket, URI uri, DataInputStream in,
+			DataOutputStream out) throws Exception {
+		socket.getRequestHeaders().put("Sec-WebSocket-Draft", "2");
+		super.performHandshake(socket, uri, in, out);
+	}
+	
 	@Override
 	public void initiateClose(WebSocket socket) {
 		synchronized (socket) {

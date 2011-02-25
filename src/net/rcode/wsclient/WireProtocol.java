@@ -50,7 +50,6 @@ public class WireProtocol {
 		random.nextBytes(quad);
 		
 		Map<String,String> headerMap=socket.getRequestHeaders();
-		if (headerMap==null) headerMap=new HashMap<String, String>();
 		headerMap.put("Connection", "Upgrade");
 		headerMap.put("Upgrade", "WebSocket");
 		headerMap.put("Sec-WebSocket-Key1", key1);
@@ -84,7 +83,7 @@ public class WireProtocol {
 		
 		System.out.println("Sending request \n'" + request + "'");
 		out.write(request.toString().getBytes(UTF8));
-		out.flush();	// Give proxys a better chance of dealing with what follows
+		//out.flush();	// Give proxys a better chance of dealing with what follows
 		out.write(quad);
 		out.flush();
 		
@@ -285,6 +284,7 @@ public class WireProtocol {
 			}
 		}
 		
+		System.out.println("READLINE: " + ret);
 		return ret.toString();
 	}
 
