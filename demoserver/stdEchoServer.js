@@ -2,7 +2,6 @@ var http=require('http');
 var webSocketServer=require('./webSocketServer');
 
 function handleSocket(s) {
-	console.log('Handling web socket');
 	s.on('message', function(body) {
 		console.log('Got message: "' + body.toString('utf8') + '"');
 		s.sendTextMessage(body);
