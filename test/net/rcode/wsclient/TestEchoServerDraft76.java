@@ -8,7 +8,7 @@ import net.rcode.wsclient.WebSocket.Event;
 import org.junit.Test;
 import static org.junit.Assert.*;
 
-public class TestEchoServer {
+public class TestEchoServerDraft76 {
 
 	@Test
 	public void testForSmoke() throws Exception {

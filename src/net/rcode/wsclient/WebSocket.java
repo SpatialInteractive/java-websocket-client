@@ -377,6 +377,8 @@ public class WebSocket {
 	}
 	
 	// -- package private (to protocol implementations)
+	private byte[] closeCookie;
+	
 	protected Map<String, String> getRequestHeaders() {
 		return requestHeaders;
 	}
@@ -389,7 +391,12 @@ public class WebSocket {
 	protected MessageQueue getTransmissionQueue() {
 		return transmissionQueue;
 	}
-	
+	public synchronized byte[] getCloseCookie() {
+		return closeCookie;
+	}
+	public synchronized void setCloseCookie(byte[] closeCookie) {
+		this.closeCookie = closeCookie;
+	}
 	
 	// -- internal implementation
 	private boolean started;

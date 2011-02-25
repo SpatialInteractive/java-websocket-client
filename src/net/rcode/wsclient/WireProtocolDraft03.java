@@ -2,22 +2,119 @@ package net.rcode.wsclient;
 
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
+import java.io.EOFException;
+import java.io.IOException;
 import java.util.Arrays;
 
+/**
+ * Implement WebSocket protocol draft 03 (numbering reset due to change in working group -
+ * draft03 is newer than draft76).
+ * <p>
+ * http://tools.ietf.org/html/draft-ietf-hybi-thewebsocketprotocol-03
+ * </p>
+ * 
+ * @author stella
+ *
+ */
 public class WireProtocolDraft03 extends WireProtocol {
 	@Override
+	public void initiateClose(WebSocket socket) {
+		synchronized (socket) {
+			byte[] cookie=new byte[8];
+			random.nextBytes(cookie);
+			
+			if (socket.getReadyState()==WebSocket.OPEN) {
+				socket.setReadyState(WebSocket.CLOSING);
+			}
+			socket.setCloseCookie(cookie);
+			socket.getTransmissionQueue().addTail(
+					new Message(Message.OPCODE_CLOSE, cookie, false));
+		}
+	}
+	
+	@Override
 	public Message readMessage(WebSocket socket, DataInputStream input) throws Exception {
-		// TODO Auto-generated method stub
-		return super.readMessage(socket, input);
+		for (;;) {
+			int header1, header2;
+			try {
+				header1=input.readUnsignedByte();
+				header2=input.readUnsignedByte();
+			} catch (EOFException e) {
+				// Just go straight to close.  Not an error.
+				socket.setReadyState(WebSocket.CLOSED);
+				return null;
+			}
+			
+			// Validate
+			if ((header1&0x70)!=0 || (header2&0x80)!=0) {
+				throw new IOException("Protocol error");
+			}
+			
+			if ((header1&0x80)!=0) {
+				// Fragment - handle specially
+				throw new IOException("Fragments not yet supported");
+			}
+			
+			int opcode=header1&0x0f;
+			int length=header2;
+			if (length==126) {
+				// Two bytes of length follow
+				length=input.readUnsignedShort();
+			} else if (length==127) {
+				// 8 bytes of length follow
+				long longLength=input.readLong();
+				if (longLength>Integer.MAX_VALUE) throw new IOException("Message length too long");
+				length=(int)longLength;
+			}
+			
+			// Read the contents
+			byte[] contents=new byte[length];
+			input.readFully(contents);
+			
+			// If its a control message, take special action
+			switch (opcode) {
+			case Message.OPCODE_TEXT:
+			case Message.OPCODE_BINARY:
+				return new Message(opcode, contents, true);
+			case Message.OPCODE_PING:
+				// Respond with PONG (sneak it to the head of the tx queue)
+				socket.getTransmissionQueue().addHead(
+						new Message(Message.OPCODE_PONG, contents, false));
+				continue;
+			case Message.OPCODE_PONG:
+				// Currently do nothing.  Should update a timestamp or something.
+				continue;
+			case Message.OPCODE_CLOSE:
+				byte[] closeCookie=socket.getCloseCookie();
+				if (closeCookie==null || !Arrays.equals(contents, closeCookie)) {
+					// This is not an ACK of our close
+					// Need to send a close ACK
+					socket.getTransmissionQueue().addHead(
+						new Message(Message.OPCODE_CLOSE, contents, false));
+					
+					// The writer will close the queue when it is done.  Just wait for it.
+					int expectClose=input.read();
+					if (expectClose!=-1) throw new IOException("Protocol error");
+					return null;
+				} else {
+					// This is an ack of a previous close we sent.  The writer has already
+					// concluded.
+					return null;
+				}
+			default:
+				throw new IOException("Protocol error");
+			}
+		}
 	}
 	
 	@Override
 	public boolean sendMessage(WebSocket socket, DataOutputStream out, Message message) throws Exception {
+		int opcode=message.getOpcode();
 		byte[] data=message.getMessageData();
 		if (data==null) return true;
 		
 		int length=data.length;
-		int header1=message.getOpcode()&0xf;
+		int header1=opcode&0xf;
 		int header2;
 		
 		// Different paths based on length
@@ -40,12 +137,13 @@ public class WireProtocolDraft03 extends WireProtocol {
 			out.writeLong(length);
 		}
 		
-		System.out.println("Wrote header for message length " + length + ": " + Integer.toHexString(header1) + " " + Integer.toHexString(header2));
-		System.out.println("Write data: " + Arrays.toString(data));
-		
 		out.write(data);
 		out.flush();
-		System.out.println("Message sent");
+		
+		// Shutdown transmission
+		if (opcode==Message.OPCODE_CLOSE) {
+			return false;
+		}
 		
 		return true;
 	}
