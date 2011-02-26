@@ -1,0 +1,49 @@
+<project name="java-websocket-client" default="dist">
+	<property file="local.properties"/>
+	
+	<target name="init-base">
+		<mkdir dir="build"/>
+		<mkdir dir="build/classes"/>
+		<mkdir dir="build/android-classes"/>
+		<mkdir dir="build/dist"/>
+		<available property="has.android.jar" file="${android.jar}"/>
+	</target>
+	
+	<target name="init-no-android" unless="has.android.jar">
+		<echo>Android support will not be built because the property android.jar is not</echo>
+		<echo>set correctly.  It is currently ${android.jar}</echo>
+	</target>
+	
+	<target name="init" depends="init-base,init-no-android"/>
+	
+	<target name="clean">
+		<delete dir="build"/>
+	</target>
+	
+	<target name="compile-core">
+		<javac srcdir="src" destdir="build/classes" target="1.5" source="1.5" debug="true" includeantruntime="false"/>
+	</target>
+	
+	<target name="compile-android" if="has.android.jar">
+		<javac srcdir="android" destdir="build/android-classes" target="1.5" source="1.5" debug="true" includeantruntime="false">
+			<classpath>
+				<pathelement location="build/classes"/>
+				<pathelement location="${android.jar}"/>
+			</classpath>
+		</javac>
+	</target>
+	
+	<target name="compile" depends="init,compile-core,compile-android"/>
+	
+	<target name="dist-android" if="has.android.jar">
+		<jar jarfile="build/dist/java-websocket-client-android.jar">
+			<fileset dir="build/classes"/>
+			<fileset dir="build/android-classes"/>
+		</jar>
+	</target>
+	
+	<target name="dist" depends="compile,dist-android">
+		<jar jarfile="build/dist/java-websocket-client.jar" basedir="build/classes"/>
+	</target>
+</project>
+

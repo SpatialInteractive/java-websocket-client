@@ -353,9 +353,8 @@ public class WebSocket {
 	 * does nothing.  Otherwise, starts the processing thread.  Environment specific
 	 * subclasses will typically integrate with the native message loop to handle this
 	 * detail for you.
-	 * @throws InterruptedException 
 	 */
-	public void start() throws InterruptedException {
+	public void start() {
 		if (started) return;
 		started=true;
 		readerThread=new Thread("WebSocket read " + url) {
