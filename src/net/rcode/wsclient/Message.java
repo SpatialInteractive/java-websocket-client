@@ -23,7 +23,7 @@ public class Message {
 		this.userMessage=userMessage;
 	}
 	
-	public Message(String textMessage) {
+	public Message(CharSequence textMessage) {
 		this(OPCODE_TEXT, Util.getUTF8Bytes(textMessage), true);
 	}
 	

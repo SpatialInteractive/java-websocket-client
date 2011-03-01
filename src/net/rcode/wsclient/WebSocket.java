@@ -250,7 +250,7 @@ public class WebSocket {
 		transmissionQueue.addHead(message);
 	}
 	
-	public void send(String message) {
+	public void send(CharSequence message) {
 		send(new Message(message));
 	}
 	
