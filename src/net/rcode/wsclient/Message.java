@@ -51,8 +51,7 @@ public class Message {
 	}
 	
 	public CharSequence getMessageText() {
-		if (isText()) return Util.fromUTF8Bytes(messageData);
-		else throw new IllegalStateException("Not text based message");
+		return Util.fromUTF8Bytes(messageData);
 	}
 	
 	public int getOpcode() {
