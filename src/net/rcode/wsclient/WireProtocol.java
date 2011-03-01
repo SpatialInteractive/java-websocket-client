@@ -8,7 +8,6 @@ import java.io.InputStream;
 import java.net.URI;
 import java.nio.ByteBuffer;
 import java.nio.CharBuffer;
-import java.nio.charset.Charset;
 import java.nio.charset.CharsetDecoder;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -24,7 +23,6 @@ import java.util.regex.Pattern;
  *
  */
 public class WireProtocol {
-	protected static final Charset UTF8=Charset.forName("UTF8");
 	protected static final Random random=new Random();
 	protected static final Pattern VERIFY_STATUSLINE_PATTERN=Pattern.compile("^HTTP\\/[^ ]+ 101 ");
 
@@ -82,7 +80,7 @@ public class WireProtocol {
 		request.append("\r\n");
 		
 		//System.out.println("Sending request \n'" + request + "'");
-		out.write(request.toString().getBytes(UTF8));
+		out.write(Util.getUTF8Bytes(request));
 		//out.flush();	// Give proxys a better chance of dealing with what follows
 		out.write(quad);
 		out.flush();
@@ -220,7 +218,7 @@ public class WireProtocol {
 		StringBuilder ret=new StringBuilder(256);
 		
 		boolean verifyLf=false;
-		CharsetDecoder decoder=UTF8.newDecoder();
+		CharsetDecoder decoder=Util.UTF8.newDecoder();
 		byte[] source=new byte[256];
 		char[] dest=new char[256];
 		ByteBuffer sourceBuffer=ByteBuffer.wrap(source);

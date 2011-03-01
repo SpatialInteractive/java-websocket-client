@@ -42,7 +42,7 @@ public class AndroidWebSocket extends WebSocket {
 	 */
 	public AndroidWebSocket(Handler handler, String url, String... requestedProtocols) {
 		super(url, requestedProtocols);
-		handler=new Handler();
+		this.handler=new Handler();
 	}
 
 	@Override

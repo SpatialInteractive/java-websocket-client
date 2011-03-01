@@ -26,10 +26,10 @@ public class TestEchoServerDraft76 {
 				if (event.getType()==WebSocket.EVENT_MESSAGE) {
 					Message msg=event.getMessage();
 					if (msg.isText()) {
-						String text=msg.getMessageText();
+						CharSequence text=msg.getMessageText();
 						System.out.println("Received message: " + text);
 						synchronized (messages) {
-							messages.add(text);
+							messages.add(text.toString());
 							messages.notify();
 						}
 					}

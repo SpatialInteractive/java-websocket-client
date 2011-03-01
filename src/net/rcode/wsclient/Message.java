@@ -1,10 +1,8 @@
 package net.rcode.wsclient;
 
-import java.nio.charset.Charset;
 
 public class Message {
 	private static final byte[] EMPTY_BYTES=new byte[0];
-	private static final Charset UTF8=Charset.forName("UTF8");
 	
 	// -- message opcodes
 	public static final int OPCODE_CONTINUATION=0;
@@ -26,7 +24,7 @@ public class Message {
 	}
 	
 	public Message(String textMessage) {
-		this(OPCODE_TEXT, textMessage.getBytes(UTF8), true);
+		this(OPCODE_TEXT, Util.getUTF8Bytes(textMessage), true);
 	}
 	
 	public Message(byte[] binaryMessage) {
@@ -52,8 +50,8 @@ public class Message {
 		return opcode==OPCODE_TEXT;
 	}
 	
-	public String getMessageText() {
-		if (isText()) return new String(messageData, UTF8);
+	public CharSequence getMessageText() {
+		if (isText()) return Util.fromUTF8Bytes(messageData);
 		else throw new IllegalStateException("Not text based message");
 	}
 	
@@ -67,7 +65,7 @@ public class Message {
 	
 	@Override
 	public String toString() {
-		if (opcode==OPCODE_TEXT) return getMessageText();
+		if (opcode==OPCODE_TEXT) return getMessageText().toString();
 		else if (messageData!=null ){
 			StringBuilder ret=new StringBuilder();
 			for (byte b: messageData) {

@@ -33,7 +33,7 @@ public class WireProtocolDraft03 extends WireProtocol {
 	@Override
 	public void initiateClose(WebSocket socket) {
 		synchronized (socket) {
-			byte[] cookie="clientclose".getBytes(UTF8);
+			byte[] cookie=Util.getUTF8Bytes("clientclose");
 			
 			if (socket.getReadyState()==WebSocket.OPEN) {
 				socket.setReadyState(WebSocket.CLOSING);
