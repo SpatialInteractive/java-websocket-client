@@ -50,7 +50,7 @@ public class WebSocket {
 		/**
 		 * Snapshot of the readyState at the time of the event
 		 */
-		protected int readyState;
+		protected int readyState=-1;
 		
 		/**
 		 * On MESSAGE event types this is the message
@@ -520,6 +520,7 @@ public class WebSocket {
 			wireProtocol.performHandshake(this, uri, in, out);
 			startWriter();
 			pumpSocketInput();
+			abort();
 		} catch (Throwable t) {
 			exceptionalShutdown(t);
 			return;
