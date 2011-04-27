@@ -293,27 +293,37 @@ public class WebSocket {
 			socket=null;
 		}
 		
+		Thread localReaderThread=null, localWriterThread=null;
 		synchronized (this) {
 			if (readerThread!=null && readerThread.isAlive()) {
 				readerThread.interrupt();
-				try {
-					readerThread.join();
-				} catch (InterruptedException e) {
-					Thread.currentThread().interrupt();
-				}
+				localReaderThread=readerThread;
 			}
 			if (writerThread!=null && writerThread.isAlive()) {
 				writerThread.interrupt();
-				try {
-					writerThread.join();
-				} catch (InterruptedException e) {
-					Thread.currentThread().interrupt();
-				}
+				localWriterThread=writerThread;
 			}
 			readerThread=null;
 			writerThread=null;
 		}
+
 		
+		if (localReaderThread!=null) {
+			try {
+				readerThread.join();
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+			}
+		}
+		
+		if (localWriterThread!=null) {
+			try {
+				writerThread.join();
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+			}
+		}
+
 		setReadyState(CLOSED);
 	}
 	
