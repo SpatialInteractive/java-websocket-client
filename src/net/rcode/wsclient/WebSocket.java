@@ -310,7 +310,7 @@ public class WebSocket {
 		
 		if (localReaderThread!=null) {
 			try {
-				readerThread.join();
+				localReaderThread.join();
 			} catch (InterruptedException e) {
 				Thread.currentThread().interrupt();
 			}
@@ -318,7 +318,7 @@ public class WebSocket {
 		
 		if (localWriterThread!=null) {
 			try {
-				writerThread.join();
+				localWriterThread.join();
 			} catch (InterruptedException e) {
 				Thread.currentThread().interrupt();
 			}
