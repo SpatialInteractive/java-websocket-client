@@ -227,7 +227,7 @@ public class WireProtocol {
 			in.mark(source.length);
 			int r=in.read(source);
 			if (r<0) {
-				throw new IOException("Short line reading response");
+				throw new IOException("Short line reading response.  Got: '" + new String(source, "ISO-8859-1") + "'");
 			}
 			sourceBuffer.clear();
 			sourceBuffer.limit(r);
