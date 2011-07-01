@@ -17,6 +17,8 @@ import java.util.regex.Pattern;
 
 import javax.net.SocketFactory;
 
+import android.os.Looper;
+
 /**
  * Provide an implementation of the HTML5 WebSocket class:
  * http://dev.w3.org/html5/websockets/
@@ -369,7 +371,9 @@ public class WebSocket {
 		started=true;
 		readerThread=new Thread("WebSocket read " + url) {
 			public void run() {
+				Looper.prepare();
 				runReader();
+				Looper.loop();
 			}
 		};
 		readerThread.start();
