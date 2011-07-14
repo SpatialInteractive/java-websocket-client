@@ -25,7 +25,14 @@ I ended up doing blocking IO instead of using NIO for a couple of reasons:
 
 Status
 ------
-This project is not yet done and I don't recommend using it just yet.
+I need to circle back to this project and do the following:
+
+* Publish javadocs
+* Publish an official release
+* Add some integration tests against live servers
+* Check back on the latest websocket standards and implement enhancements
+
+I am using this in a real application without issue and we have used it as a basis for testing and correcting an ios websocket library we are using.  Due to the above, I hesitate to say it is ready for primetime, but neither am I aware of any problems with it.
 
 License
 -------
